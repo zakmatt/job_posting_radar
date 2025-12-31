@@ -1,0 +1,1 @@
+"""Ingestion package for fetching raw job postings."""
