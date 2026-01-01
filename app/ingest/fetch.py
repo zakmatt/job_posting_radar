@@ -26,6 +26,8 @@ def ingest_nofluff(
     criteria: Optional[Dict[str, Any]] = None,
     fetch_details: bool = True,
     detail_workers: int = 8,
+    target_count: Optional[int] = None,
+    since: Optional[datetime] = None,
     settings: Optional[AppSettings] = None,
 ) -> List[Path]:
     """Ingest pages from No Fluff Jobs and persist raw payloads.
@@ -37,6 +39,8 @@ def ingest_nofluff(
         criteria: Optional search criteria dictionary.
         fetch_details: When True, fetches detail payload per job.
         detail_workers: Maximum parallel workers for detail fetch.
+        target_count: Optional hard cap on number of offers to write.
+        since: Optional UTC datetime; stop when postings are older than this.
         settings: Optional application settings instance.
 
     Returns:
@@ -47,8 +51,12 @@ def ingest_nofluff(
     client = NoFluffJobsClient(settings=settings)
     written: List[Path] = []
     seen_source_ids: set[str] = set()
+    stop_pagination = False
+    total_written = 0
 
     for page in range(start_page, start_page + pages):
+        if stop_pagination:
+            break
         logger.info("Fetching page", extra={"page": page})
         search_response = client.fetch_page(page=page, criteria=criteria)
         postings = list(_extract_postings(search_response))
@@ -58,6 +66,10 @@ def ingest_nofluff(
 
         page_records: List[Dict[str, Any]] = []
         for posting in postings:
+            posted_at = _posted_at(posting)
+            if since and posted_at and posted_at < since:
+                stop_pagination = True
+                continue
             source_id = _extract_source_id(posting)
             if source_id in seen_source_ids:
                 continue
@@ -110,6 +122,10 @@ def ingest_nofluff(
             )
             if path:
                 written.append(path)
+                total_written += 1
+
+        if target_count and total_written >= target_count:
+            stop_pagination = True
 
     return written
 
@@ -142,6 +158,17 @@ def _extract_job_slug(posting: Dict[str, Any]) -> str:
             return str(value)
     digest = hashlib.sha256(json.dumps(posting, sort_keys=True).encode("utf-8")).hexdigest()
     return digest[:20]
+
+
+def _posted_at(posting: Dict[str, Any]) -> Optional[datetime]:
+    """Return posting datetime (UTC) if available."""
+    ts = posting.get("posted") or posting.get("renewed")
+    if isinstance(ts, (int, float)):
+        try:
+            return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def _target_path(record: Dict[str, Any], output_dir: Path) -> Path:
