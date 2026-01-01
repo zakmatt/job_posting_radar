@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -24,6 +25,7 @@ def ingest_nofluff(
     start_page: int = 1,
     criteria: Optional[Dict[str, Any]] = None,
     fetch_details: bool = True,
+    detail_workers: int = 8,
     settings: Optional[AppSettings] = None,
 ) -> List[Path]:
     """Ingest pages from No Fluff Jobs and persist raw payloads.
@@ -34,6 +36,7 @@ def ingest_nofluff(
         start_page: First page to fetch (1-based).
         criteria: Optional search criteria dictionary.
         fetch_details: When True, fetches detail payload per job.
+        detail_workers: Maximum parallel workers for detail fetch.
         settings: Optional application settings instance.
 
     Returns:
@@ -43,6 +46,7 @@ def ingest_nofluff(
     output_dir.mkdir(parents=True, exist_ok=True)
     client = NoFluffJobsClient(settings=settings)
     written: List[Path] = []
+    seen_source_ids: set[str] = set()
 
     for page in range(start_page, start_page + pages):
         logger.info("Fetching page", extra={"page": page})
@@ -52,30 +56,58 @@ def ingest_nofluff(
             logger.info("No postings returned; stopping pagination", extra={"page": page})
             break
 
+        page_records: List[Dict[str, Any]] = []
         for posting in postings:
             source_id = _extract_source_id(posting)
+            if source_id in seen_source_ids:
+                continue
+            seen_source_ids.add(source_id)
+
             job_slug = _extract_job_slug(posting)
-            payload: Dict[str, Any] = {"listing": posting}
-
-            if fetch_details:
-                try:
-                    payload["details"] = client.fetch_job_details(job_slug)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to fetch job details",
-                        extra={"source_id": source_id, "job_slug": job_slug, "error": str(exc)},
-                    )
-
-            record = {
+            record: Dict[str, Any] = {
                 "source": SOURCE_NAME,
                 "source_id": source_id,
                 "job_slug": job_slug,
                 "ingested_at": datetime.now(timezone.utc).isoformat(),
                 "page": page,
                 "url": posting.get("url") or posting.get("postingUrl"),
-                "payload": payload,
+                "payload": {"listing": posting},
             }
-            path = _persist_payload(record=record, output_dir=output_dir)
+            path = _target_path(record=record, output_dir=output_dir)
+            if path.exists():
+                logger.info("Skipping existing payload", extra={"path": str(path)})
+                continue
+            page_records.append({"record": record, "path": path})
+
+        if not page_records:
+            continue
+
+        if fetch_details:
+            with ThreadPoolExecutor(max_workers=detail_workers) as executor:
+                future_map = {
+                    executor.submit(_fetch_details_worker, rec["record"]["job_slug"], settings): rec
+                    for rec in page_records
+                }
+                for future, rec in future_map.items():
+                    try:
+                        details = future.result()
+                        rec["record"]["payload"]["details"] = details
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to fetch job details",
+                            extra={
+                                "source_id": rec["record"]["source_id"],
+                                "job_slug": rec["record"]["job_slug"],
+                                "error": str(exc),
+                            },
+                        )
+
+        for rec in page_records:
+            path = _persist_payload(
+                record=rec["record"],
+                output_dir=output_dir,
+                precomputed_path=rec["path"],
+            )
             if path:
                 written.append(path)
 
@@ -112,13 +144,23 @@ def _extract_job_slug(posting: Dict[str, Any]) -> str:
     return digest[:20]
 
 
-def _persist_payload(record: Dict[str, Any], output_dir: Path) -> Optional[Path]:
+def _target_path(record: Dict[str, Any], output_dir: Path) -> Path:
+    """Compute the target path for a record."""
+    source_id = record.get("source_id")
+    if not source_id:
+        raise ValueError("record missing source_id")
+    return output_dir / f"{source_id}.json"
+
+
+def _persist_payload(
+    record: Dict[str, Any], output_dir: Path, precomputed_path: Optional[Path] = None
+) -> Optional[Path]:
     """Persist a payload to disk, skipping if it already exists."""
     source_id = record.get("source_id")
     if not source_id:
         raise ValueError("record missing source_id")
 
-    path = output_dir / f"{source_id}.json"
+    path = precomputed_path or _target_path(record=record, output_dir=output_dir)
     if path.exists():
         logger.info("Skipping existing payload", extra={"path": str(path)})
         return None
@@ -127,5 +169,11 @@ def _persist_payload(record: Dict[str, Any], output_dir: Path) -> Optional[Path]
     path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("Wrote raw payload", extra={"path": str(path)})
     return path
+
+
+def _fetch_details_worker(job_slug: str, settings: AppSettings) -> Dict[str, Any]:
+    """Fetch details using a dedicated client per worker to avoid session sharing."""
+    client = NoFluffJobsClient(settings=settings)
+    return client.fetch_job_details(job_slug)
 
 
