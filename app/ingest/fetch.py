@@ -12,10 +12,12 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from app.config import AppSettings
 from app.ingest.sources.nofluff import NoFluffJobsClient
+from app.ingest.sources.justjoin import JustJoinClient
 
 logger = logging.getLogger(__name__)
 
-SOURCE_NAME = "nofluff"
+SOURCE_NOFLUFF = "nofluff"
+SOURCE_JUSTJOIN = "justjoin"
 
 
 def ingest_nofluff(
@@ -77,7 +79,7 @@ def ingest_nofluff(
 
             job_slug = _extract_job_slug(posting)
             record: Dict[str, Any] = {
-                "source": SOURCE_NAME,
+                "source": SOURCE_NOFLUFF,
                 "source_id": source_id,
                 "job_slug": job_slug,
                 "ingested_at": datetime.now(timezone.utc).isoformat(),
@@ -130,6 +132,97 @@ def ingest_nofluff(
     return written
 
 
+def ingest_justjoin(
+    *,
+    pages: int,
+    output_dir: Path,
+    start_page: int = 1,
+    fetch_details: bool = False,
+    detail_workers: int = 8,
+    target_count: Optional[int] = None,
+    since: Optional[datetime] = None,
+    settings: Optional[AppSettings] = None,
+) -> List[Path]:
+    """Ingest pages from Just Join IT and persist raw payloads."""
+
+    settings = settings or AppSettings()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    client = JustJoinClient(settings=settings)
+    written: List[Path] = []
+    seen_source_ids: set[str] = set()
+    total_written = 0
+    stop_pagination = False
+
+    cursor = (start_page - 1) * settings.justjoin_page_size if settings else 0
+    for batch in range(pages):
+        if stop_pagination:
+            break
+        logger.info("Fetching page", extra={"page": batch + 1, "cursor": cursor, "source": SOURCE_JUSTJOIN})
+        search_response = client.fetch_page(cursor=cursor)
+        logger.info(f"Search response: {search_response}")
+        postings = search_response.get("postings") or []
+        items_count = search_response.get("items_count") or settings.justjoin_page_size
+        logger.info(f"Items count: {items_count}")
+        logger.info(f"Postings length: {len(postings)}")
+        if not postings:
+            logger.info("No postings returned; stopping pagination", extra={"cursor": cursor})
+            break
+
+        page_records: List[Dict[str, Any]] = []
+        for posting in postings:
+            posted_at = _posted_at(posting)
+            if since and posted_at and posted_at < since:
+                stop_pagination = True
+                continue
+            source_id = _extract_source_id_justjoin(posting)
+            if source_id in seen_source_ids:
+                continue
+            seen_source_ids.add(source_id)
+
+            job_slug = _extract_job_slug(posting)
+            record: Dict[str, Any] = {
+                "source": SOURCE_JUSTJOIN,
+                "source_id": source_id,
+                "job_slug": job_slug,
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
+                "page": batch + 1,
+                "url": posting.get("url") or posting.get("slug"),
+                "payload": {"listing": posting},
+            }
+            page_records.append(record)
+
+        if fetch_details and page_records:
+            with ThreadPoolExecutor(max_workers=detail_workers) as executor:
+                future_map = {
+                    executor.submit(_fetch_details_worker_justjoin, rec["job_slug"], settings): rec
+                    for rec in page_records
+                }
+                for future, rec in future_map.items():
+                    try:
+                        details = future.result()
+                        rec["payload"]["details"] = details
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to fetch JJ detail",
+                            extra={"source_id": rec["source_id"], "job_slug": rec["job_slug"], "error": str(exc)},
+                        )
+
+        for rec in page_records:
+            path = _persist_payload(record=rec, output_dir=output_dir)
+            if path:
+                written.append(path)
+                total_written += 1
+
+        if target_count and total_written >= target_count:
+            break
+        if search_response.get("next_cursor") is None:
+            cursor += items_count
+        else:
+            cursor = search_response.get("next_cursor")
+
+    return written
+
+
 def _extract_postings(response: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
     """Return iterable of postings from a search response."""
     for key in ("postings", "content", "data"):
@@ -150,6 +243,16 @@ def _extract_source_id(posting: Dict[str, Any]) -> str:
     return digest[:20]
 
 
+def _extract_source_id_justjoin(posting: Dict[str, Any]) -> str:
+    """Extract a stable id for Just Join offers."""
+    for key in ("id", "uuid", "slug", "hash_id", "offer_id"):
+        value = posting.get(key)
+        if value:
+            return str(value)
+    digest = hashlib.sha256(json.dumps(posting, sort_keys=True).encode("utf-8")).hexdigest()
+    return digest[:20]
+
+
 def _extract_job_slug(posting: Dict[str, Any]) -> str:
     """Extract slug for detail fetch; fall back to id/reference if missing."""
     for key in ("reference", "url", "slug", "postingUrl", "id"):
@@ -162,10 +265,18 @@ def _extract_job_slug(posting: Dict[str, Any]) -> str:
 
 def _posted_at(posting: Dict[str, Any]) -> Optional[datetime]:
     """Return posting datetime (UTC) if available."""
-    ts = posting.get("posted") or posting.get("renewed")
+    ts = posting.get("posted") or posting.get("renewed") or posting.get("publishedAt")
     if isinstance(ts, (int, float)):
         try:
             return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        except Exception:  # noqa: BLE001
+            return None
+    if isinstance(ts, str):
+        try:
+            # Normalize Z to +00:00
+            if ts.endswith("Z"):
+                ts = ts.replace("Z", "+00:00")
+            return datetime.fromisoformat(ts).astimezone(timezone.utc)
         except Exception:  # noqa: BLE001
             return None
     return None
@@ -203,4 +314,9 @@ def _fetch_details_worker(job_slug: str, settings: AppSettings) -> Dict[str, Any
     client = NoFluffJobsClient(settings=settings)
     return client.fetch_job_details(job_slug)
 
+
+def _fetch_details_worker_justjoin(job_slug: str, settings: AppSettings) -> Dict[str, Any]:
+    """Fetch JJ detail using a dedicated client per worker."""
+    client = JustJoinClient(settings=settings)
+    return client.fetch_detail(job_slug)
 

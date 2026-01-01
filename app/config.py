@@ -79,6 +79,22 @@ class AppSettings(BaseSettings):
         default="month",
         description="Salary period filter for No Fluff Jobs search.",
     )
+    justjoin_base_url: str = Field(
+        default="https://justjoin.it",
+        description="Base URL for Just Join IT.",
+    )
+    justjoin_api_base_url: str = Field(
+        default="https://api.justjoin.it",
+        description="API base URL for Just Join IT.",
+    )
+    justjoin_api_offers_path: str = Field(
+        default="/api/offers",
+        description="API path for Just Join IT offers.",
+    )
+    justjoin_page_size: int = Field(
+        default=100,
+        description="Number of offers to request per page from Just Join IT.",
+    )
     user_agent: str = Field(
         default="job-posting-radar/ingest",
         description="User agent sent to upstream sources.",

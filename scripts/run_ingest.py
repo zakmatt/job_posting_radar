@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import AppSettings
-from app.ingest.fetch import SOURCE_NAME, ingest_nofluff
+from app.ingest.fetch import (
+    SOURCE_JUSTJOIN,
+    SOURCE_NOFLUFF,
+    ingest_justjoin,
+    ingest_nofluff,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -17,9 +22,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest raw job postings.")
     parser.add_argument(
         "--source",
-        default=SOURCE_NAME,
-        choices=[SOURCE_NAME],
-        help="Source to ingest (currently only NoFluff).",
+        default=SOURCE_NOFLUFF,
+        choices=[SOURCE_NOFLUFF, SOURCE_JUSTJOIN],
+        help="Source to ingest (NoFluff or JustJoin).",
     )
     parser.add_argument("--pages", type=int, default=1, help="Number of pages to fetch.")
     parser.add_argument(
@@ -105,7 +110,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    if args.source != SOURCE_NAME:
+    if args.source not in (SOURCE_NOFLUFF, SOURCE_JUSTJOIN):
         raise ValueError(f"Unsupported source {args.source}")
 
     output_dir = (
@@ -114,15 +119,26 @@ def main() -> None:
         else settings.source_raw_dir(args.source, target_date)
     )
 
-    written = ingest_nofluff(
-        pages=args.pages,
-        start_page=args.start_page,
-        output_dir=output_dir,
-        fetch_details=not args.skip_details,
-        target_count=args.limit,
-        since=since_cutoff,
-        settings=settings,
-    )
+    if args.source == SOURCE_NOFLUFF:
+        written = ingest_nofluff(
+            pages=args.pages,
+            start_page=args.start_page,
+            output_dir=output_dir,
+            fetch_details=not args.skip_details,
+            target_count=args.limit,
+            since=since_cutoff,
+            settings=settings,
+        )
+    else:
+        written = ingest_justjoin(
+            pages=args.pages,
+            start_page=args.start_page,
+            output_dir=output_dir,
+            fetch_details=False,
+            target_count=args.limit,
+            since=since_cutoff,
+            settings=settings,
+        )
 
     print(f"Wrote {len(written)} files to {output_dir}")
 
