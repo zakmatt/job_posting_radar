@@ -18,7 +18,11 @@ from app.ingest.fetch import (
 
 
 def parse_args() -> argparse.Namespace:
-    """Build and parse CLI arguments."""
+    """Build and parse CLI arguments.
+
+    Returns:
+        argparse.Namespace with ingestion options.
+    """
     parser = argparse.ArgumentParser(description="Ingest raw job postings.")
     parser.add_argument(
         "--source",
@@ -71,14 +75,29 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_date(raw_date: Optional[str]) -> date:
-    """Resolve ISO date string to date."""
+    """Resolve ISO date string to date.
+
+    Args:
+        raw_date: ISO date string (YYYY-MM-DD) or None.
+
+    Returns:
+        date object; today (UTC) if None provided.
+    """
     if not raw_date:
         return datetime.now().astimezone(timezone.utc).date()
     return date.fromisoformat(raw_date)
 
 
 def resolve_since(raw_since: Optional[str], window: Optional[str]) -> Optional[datetime]:
-    """Resolve absolute or relative 'since' cutoff to UTC datetime."""
+    """Resolve absolute or relative 'since' cutoff to UTC datetime.
+
+    Args:
+        raw_since: Absolute date string (YYYY-MM-DD) or None.
+        window: Relative window label; one of last_week/month/quarter/half_year/year or None.
+
+    Returns:
+        UTC datetime cutoff or None if not provided.
+    """
     if raw_since and window:
         raise ValueError("Use only one of --since or --since-window")
     if raw_since:

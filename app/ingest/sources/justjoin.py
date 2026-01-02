@@ -28,7 +28,18 @@ class JustJoinClient:
         self._last_request_at: Optional[float] = None
 
     def fetch_page(self, cursor: int) -> Dict[str, Any]:
-        """Fetch a batch of offers via the cursor endpoint."""
+        """Fetch a batch of offers via the cursor endpoint.
+
+        Args:
+            cursor: Zero-based offset indicating where to start returning offers.
+
+        Returns:
+            Dict with:
+                - postings: list of offers that include salary info.
+                - raw_payload: full API response JSON.
+                - next_cursor: next offset if provided by API (may be None).
+                - items_count: number of items requested in this call.
+        """
         if cursor < 0:
             raise ValueError("cursor must be >= 0")
 
@@ -57,7 +68,14 @@ class JustJoinClient:
         }
 
     def fetch_detail(self, slug: str) -> Dict[str, Any]:
-        """Fetch offer detail by slug."""
+        """Fetch offer detail by slug.
+
+        Args:
+            slug: Offer slug from the listing payload.
+
+        Returns:
+            Offer detail JSON as returned by the API.
+        """
         if not slug:
             raise ValueError("slug must be provided")
         url = f"{self.api_base_url}/v1/offers/{slug}"

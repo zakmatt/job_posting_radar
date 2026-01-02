@@ -35,7 +35,7 @@ def ingest_nofluff(
     """Ingest pages from No Fluff Jobs and persist raw payloads.
 
     Args:
-        pages: Number of pages to fetch.
+        pages: Maximum number of pages to fetch (1-based).
         output_dir: Directory where raw JSON files will be written.
         start_page: First page to fetch (1-based).
         criteria: Optional search criteria dictionary.
@@ -46,7 +46,7 @@ def ingest_nofluff(
         settings: Optional application settings instance.
 
     Returns:
-        List of paths written.
+        List of file paths written to disk.
     """
     settings = settings or AppSettings()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -143,7 +143,21 @@ def ingest_justjoin(
     since: Optional[datetime] = None,
     settings: Optional[AppSettings] = None,
 ) -> List[Path]:
-    """Ingest pages from Just Join IT and persist raw payloads."""
+    """Ingest pages from Just Join IT and persist raw payloads.
+
+    Args:
+        pages: Maximum number of cursor batches to fetch.
+        output_dir: Directory where raw JSON files will be written.
+        start_page: 1-based batch index; translated to cursor offset.
+        fetch_details: When True, fetches detail payload per job (currently off).
+        detail_workers: Maximum parallel workers for detail fetch.
+        target_count: Optional hard cap on number of offers to write.
+        since: Optional UTC datetime; stop when postings are older than this.
+        settings: Optional application settings instance.
+
+    Returns:
+        List of file paths written to disk.
+    """
 
     settings = settings or AppSettings()
     output_dir.mkdir(parents=True, exist_ok=True)
