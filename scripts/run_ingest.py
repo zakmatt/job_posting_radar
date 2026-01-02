@@ -9,17 +9,26 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import AppSettings
-from app.ingest.fetch import SOURCE_NAME, ingest_nofluff
+from app.ingest.fetch import (
+    SOURCE_JUSTJOIN,
+    SOURCE_NOFLUFF,
+    ingest_justjoin,
+    ingest_nofluff,
+)
 
 
 def parse_args() -> argparse.Namespace:
-    """Build and parse CLI arguments."""
+    """Build and parse CLI arguments.
+
+    Returns:
+        argparse.Namespace with ingestion options.
+    """
     parser = argparse.ArgumentParser(description="Ingest raw job postings.")
     parser.add_argument(
         "--source",
-        default=SOURCE_NAME,
-        choices=[SOURCE_NAME],
-        help="Source to ingest (currently only NoFluff).",
+        default=SOURCE_NOFLUFF,
+        choices=[SOURCE_NOFLUFF, SOURCE_JUSTJOIN],
+        help="Source to ingest (NoFluff or JustJoin).",
     )
     parser.add_argument("--pages", type=int, default=1, help="Number of pages to fetch.")
     parser.add_argument(
@@ -66,14 +75,29 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_date(raw_date: Optional[str]) -> date:
-    """Resolve ISO date string to date."""
+    """Resolve ISO date string to date.
+
+    Args:
+        raw_date: ISO date string (YYYY-MM-DD) or None.
+
+    Returns:
+        date object; today (UTC) if None provided.
+    """
     if not raw_date:
         return datetime.now().astimezone(timezone.utc).date()
     return date.fromisoformat(raw_date)
 
 
 def resolve_since(raw_since: Optional[str], window: Optional[str]) -> Optional[datetime]:
-    """Resolve absolute or relative 'since' cutoff to UTC datetime."""
+    """Resolve absolute or relative 'since' cutoff to UTC datetime.
+
+    Args:
+        raw_since: Absolute date string (YYYY-MM-DD) or None.
+        window: Relative window label; one of last_week/month/quarter/half_year/year or None.
+
+    Returns:
+        UTC datetime cutoff or None if not provided.
+    """
     if raw_since and window:
         raise ValueError("Use only one of --since or --since-window")
     if raw_since:
@@ -105,7 +129,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    if args.source != SOURCE_NAME:
+    if args.source not in (SOURCE_NOFLUFF, SOURCE_JUSTJOIN):
         raise ValueError(f"Unsupported source {args.source}")
 
     output_dir = (
@@ -114,15 +138,26 @@ def main() -> None:
         else settings.source_raw_dir(args.source, target_date)
     )
 
-    written = ingest_nofluff(
-        pages=args.pages,
-        start_page=args.start_page,
-        output_dir=output_dir,
-        fetch_details=not args.skip_details,
-        target_count=args.limit,
-        since=since_cutoff,
-        settings=settings,
-    )
+    if args.source == SOURCE_NOFLUFF:
+        written = ingest_nofluff(
+            pages=args.pages,
+            start_page=args.start_page,
+            output_dir=output_dir,
+            fetch_details=not args.skip_details,
+            target_count=args.limit,
+            since=since_cutoff,
+            settings=settings,
+        )
+    else:
+        written = ingest_justjoin(
+            pages=args.pages,
+            start_page=args.start_page,
+            output_dir=output_dir,
+            fetch_details=False,
+            target_count=args.limit,
+            since=since_cutoff,
+            settings=settings,
+        )
 
     print(f"Wrote {len(written)} files to {output_dir}")
 
