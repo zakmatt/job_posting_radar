@@ -153,7 +153,7 @@ def main() -> None:
             pages=args.pages,
             start_page=args.start_page,
             output_dir=output_dir,
-            fetch_details=False,
+            fetch_details=not args.skip_details,
             target_count=args.limit,
             since=since_cutoff,
             settings=settings,
