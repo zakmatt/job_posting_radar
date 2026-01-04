@@ -48,7 +48,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--skip-details",
-        action="store_true",
         default=False,
         help="Skip fetching detail payload per job (default: fetch).",
     )
