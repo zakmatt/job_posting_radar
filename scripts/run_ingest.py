@@ -48,7 +48,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--skip-details",
-        action="store_true",
         default=False,
         help="Skip fetching detail payload per job (default: fetch).",
     )
@@ -153,7 +152,7 @@ def main() -> None:
             pages=args.pages,
             start_page=args.start_page,
             output_dir=output_dir,
-            fetch_details=False,
+            fetch_details=not args.skip_details,
             target_count=args.limit,
             since=since_cutoff,
             settings=settings,
