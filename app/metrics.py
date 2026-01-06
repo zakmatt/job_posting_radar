@@ -32,6 +32,7 @@ JOBS_NORMALIZED_TOTAL = Counter(
 JOBS_EMBEDDED_TOTAL = Counter(
     "jobs_embedded_total",
     "Total number of jobs successfully embedded and upserted",
+    ["source"],
     registry=REGISTRY,
 )
 

@@ -120,7 +120,11 @@ def main() -> None:
 
         # Upsert to Qdrant
         store.upsert_postings(ids=batch_ids, vectors=vectors, payloads=batch_payloads)
-        JOBS_EMBEDDED_TOTAL.inc(len(batch_ids))
+        
+        # Increment metrics per source in the batch
+        for payload in batch_payloads:
+            source = payload.get("source", "unknown")
+            JOBS_EMBEDDED_TOTAL.labels(source=source).inc()
         
         logger.info(
             "Processed batch",
