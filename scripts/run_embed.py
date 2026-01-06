@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from app.config import AppSettings
+from app.metrics import JOBS_EMBEDDED_TOTAL, EMBEDDING_LATENCY_SECONDS, push_metrics
 from app.vector.embeddings import EmbeddingGenerator
 from app.vector.store import VectorStore
 
@@ -114,10 +115,13 @@ def main() -> None:
             continue
 
         # Generate embeddings
-        vectors = generator.generate(batch_texts)
+        with EMBEDDING_LATENCY_SECONDS.time():
+            vectors = generator.generate(batch_texts)
 
         # Upsert to Qdrant
         store.upsert_postings(ids=batch_ids, vectors=vectors, payloads=batch_payloads)
+        JOBS_EMBEDDED_TOTAL.inc(len(batch_ids))
+        
         logger.info(
             "Processed batch",
             extra={
@@ -127,6 +131,7 @@ def main() -> None:
             },
         )
 
+    push_metrics("embed", settings=settings)
     print(f"Successfully upserted {total_files} postings to Qdrant.")
 
 

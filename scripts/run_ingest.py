@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import AppSettings
+from app.metrics import JOBS_INGESTED_TOTAL, INGESTION_ERRORS_TOTAL, push_metrics
 from app.ingest.fetch import (
     SOURCE_JUSTJOIN,
     SOURCE_NOFLUFF,
@@ -137,28 +138,35 @@ def main() -> None:
         else settings.source_raw_dir(args.source, target_date)
     )
 
-    if args.source == SOURCE_NOFLUFF:
-        written = ingest_nofluff(
-            pages=args.pages,
-            start_page=args.start_page,
-            output_dir=output_dir,
-            fetch_details=not args.skip_details,
-            target_count=args.limit,
-            since=since_cutoff,
-            settings=settings,
-        )
-    else:
-        written = ingest_justjoin(
-            pages=args.pages,
-            start_page=args.start_page,
-            output_dir=output_dir,
-            fetch_details=not args.skip_details,
-            target_count=args.limit,
-            since=since_cutoff,
-            settings=settings,
-        )
+    try:
+        if args.source == SOURCE_NOFLUFF:
+            written = ingest_nofluff(
+                pages=args.pages,
+                start_page=args.start_page,
+                output_dir=output_dir,
+                fetch_details=not args.skip_details,
+                target_count=args.limit,
+                since=since_cutoff,
+                settings=settings,
+            )
+        else:
+            written = ingest_justjoin(
+                pages=args.pages,
+                start_page=args.start_page,
+                output_dir=output_dir,
+                fetch_details=not args.skip_details,
+                target_count=args.limit,
+                since=since_cutoff,
+                settings=settings,
+            )
 
-    print(f"Wrote {len(written)} files to {output_dir}")
+        JOBS_INGESTED_TOTAL.labels(source=args.source).inc(len(written))
+        push_metrics("ingest", settings=settings)
+        print(f"Wrote {len(written)} files to {output_dir}")
+    except Exception as exc:
+        INGESTION_ERRORS_TOTAL.labels(source=args.source).inc()
+        push_metrics("ingest", settings=settings)
+        raise exc
 
 
 if __name__ == "__main__":

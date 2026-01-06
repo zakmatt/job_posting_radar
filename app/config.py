@@ -107,6 +107,14 @@ class AppSettings(BaseSettings):
         default="job_posts",
         description="Name of the Qdrant collection for job postings.",
     )
+    pushgateway_host: str = Field(
+        default="localhost",
+        description="Host for Prometheus Pushgateway.",
+    )
+    pushgateway_port: int = Field(
+        default=9091,
+        description="Port for Prometheus Pushgateway.",
+    )
     embedding_model_name: str = Field(
         default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         description="HuggingFace model name for generating embeddings.",
