@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import List, Literal, Optional
@@ -106,7 +107,7 @@ class NormalizedJobPosting(BaseModel):
         """SHA-256 hash of title + company + description for deduplication.
 
         Returns:
-            First 16 hex characters of the hash.
+            First 32 hex characters of the hash.
         """
         parts = [
             self.title or "",
@@ -114,7 +115,24 @@ class NormalizedJobPosting(BaseModel):
             self.description or "",
         ]
         combined = "|".join(parts).lower().strip()
-        return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
+        return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:32]
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def point_id(self) -> str:
+        """Stable UUID generated from title + company + description.
+
+        Returns:
+            UUID string.
+        """
+        parts = [
+            self.title or "",
+            self.company or "",
+            self.description or "",
+        ]
+        combined = "|".join(parts).lower().strip()
+        # Use namespace UUID to generate a stable UUID from the text
+        return str(uuid.uuid5(uuid.NAMESPACE_OID, combined))
 
     @computed_field  # type: ignore[misc]
     @property
@@ -125,20 +143,21 @@ class NormalizedJobPosting(BaseModel):
         and requirements into a single searchable text block.
 
         Returns:
-            Newline-separated text suitable for embedding.
+            Formatted text block for embedding.
         """
+        loc_str = ", ".join([f"{l.city} ({l.country})" for l in self.locations if l.city])
+        skills = self.skills_required + self.skills_nice_to_have
+        skills_str = ", ".join(skills)
+
         lines = [
-            f"Title: {self.title}",
+            self.title,
+            self.company or "Unknown Company",
+            f"Seniority: {self.seniority.value} | Mode: {self.work_mode.value} | Location: {loc_str or 'Remote'}",
+            f"Skills: {skills_str}",
+            "Description:",
+            self.description or "No description provided.",
+            "Requirements:",
+            self.requirements_text or "No requirements provided.",
         ]
-        if self.company:
-            lines.append(f"Company: {self.company}")
-        lines.append(f"Seniority: {self.seniority.value}")
-        lines.append(f"Work mode: {self.work_mode.value}")
-        if self.skills_required:
-            lines.append(f"Required skills: {', '.join(self.skills_required)}")
-        if self.description:
-            lines.append(f"Description: {self.description}")
-        if self.requirements_text:
-            lines.append(f"Requirements: {self.requirements_text}")
         return "\n".join(lines)
 
