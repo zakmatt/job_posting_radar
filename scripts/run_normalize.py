@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import AppSettings
+from app.metrics import JOBS_NORMALIZED_TOTAL, NORMALIZATION_ERRORS_TOTAL, push_metrics
 from app.ingest.fetch import SOURCE_JUSTJOIN, SOURCE_NOFLUFF
 from app.normalize import normalize_justjoin, normalize_nofluff
 
@@ -92,12 +93,19 @@ def normalize_file(
         return None
 
     source = raw.get("source")
-    if source == SOURCE_NOFLUFF:
-        normalized = normalize_nofluff(raw)
-    elif source == SOURCE_JUSTJOIN:
-        normalized = normalize_justjoin(raw)
-    else:
-        logger.warning("Unknown source %s in %s", source, input_path)
+    try:
+        if source == SOURCE_NOFLUFF:
+            normalized = normalize_nofluff(raw)
+        elif source == SOURCE_JUSTJOIN:
+            normalized = normalize_justjoin(raw)
+        else:
+            logger.warning("Unknown source %s in %s", source, input_path)
+            return None
+        
+        JOBS_NORMALIZED_TOTAL.labels(source=source).inc()
+    except Exception as exc:
+        NORMALIZATION_ERRORS_TOTAL.labels(source=source or "unknown").inc()
+        logger.warning("Failed to normalize %s: %s", input_path, exc)
         return None
 
     # Use content_hash as filename for deduplication
@@ -185,6 +193,7 @@ def main() -> None:
         total_written += written
         logger.info("Wrote %d files for %s", written, source)
 
+    push_metrics("normalize", settings=settings)
     print(f"Normalized {total_written} files to {output_dir}")
 
 
