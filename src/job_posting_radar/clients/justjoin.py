@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from app.config import AppSettings
+from job_posting_radar.config import AppSettings
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
 
-from app.config import AppSettings
+from job_posting_radar.config import AppSettings
 
 logger = logging.getLogger(__name__)
 

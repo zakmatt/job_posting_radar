@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from app.normalize.models import (
+from job_posting_radar.normalization.models import (
     EmploymentType,
     Location,
     NormalizedJobPosting,

@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from sentence_transformers import SentenceTransformer
 
-from app.config import AppSettings
+from job_posting_radar.config import AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -41,4 +41,3 @@ class EmbeddingGenerator:
         logger.debug("Generating embeddings", extra={"count": len(texts)})
         embeddings = self.model.encode(texts, convert_to_numpy=True)
         return embeddings.tolist()
-

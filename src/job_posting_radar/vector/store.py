@@ -9,7 +9,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import UnexpectedResponse
 
-from app.config import AppSettings
+from job_posting_radar.config import AppSettings
 
 logger = logging.getLogger(__name__)
 

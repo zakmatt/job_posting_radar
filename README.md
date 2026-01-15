@@ -1,30 +1,55 @@
 # Job Posting Radar
 
-Pipeline for ingesting, normalizing, embedding, and searching Polish tech job postings.
+Pipeline for ingesting, normalizing, embedding, and searching tech job postings from Polish markets (NoFluffJobs, JustJoin.it).
+
+Built with **Kedro** for reproducibility and **Qdrant** for vector search.
 
 ## Quickstart
 
+### 1. Environment Setup
+Create a virtual environment and install dependencies using `uv`:
 ```bash
-python -m venv .venv
+uv sync
 source .venv/bin/activate
-pip install -e ".[dev]"
-# Fetch two pages from No Fluff Jobs into data/raw/nofluff/<today>
-python scripts/run_ingest.py --pages 2
 ```
+
+### 2. Infrastructure
+Start the monitoring and database stack (Qdrant, Prometheus, Grafana, Pushgateway):
+```bash
+docker compose up -d
+```
+
+### 3. Run the Pipeline
+Run the full pipeline (Ingest → Normalize → Embed):
+```bash
+kedro run
+```
+
+Or run specific stages:
+```bash
+kedro run --pipeline ingest
+kedro run --pipeline normalize
+kedro run --pipeline embed
+```
+
+## Monitoring & Visualization
+
+- **Grafana**: [http://localhost:3000](http://localhost:3000) (Login: `admin`/`admin`)
+- **Prometheus**: [http://localhost:9090](http://localhost:9090)
+- **Qdrant Dashboard**: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
+- **Kedro Viz**: Run `kedro viz` to see the pipeline DAG.
+
+## Project Structure
+
+- `conf/`: Configuration files (catalog, parameters).
+- `src/job_posting_radar/`: Source code.
+    - `clients/`: HTTP clients for NoFluff and JustJoin.
+    - `normalization/`: Logic for cleaning and standardizing data.
+    - `vector/`: Embedding generation and Qdrant integration.
+    - `pipelines/`: Kedro pipeline and node definitions.
+- `data/`: Local storage for raw and processed job postings.
 
 ## Configuration
 
-- Defaults live in `app/config.py` and can be overridden with environment variables (see fields in `AppSettings`).
-- Create a `.env` file if you need to change base URLs, timeouts, or rate limits.
-- No Fluff Jobs ingestion calls `https://nofluffjobs.com/api/joboffers/main` with `pageTo/pageSize` pagination, region/language/salary params, and keeps only offers with disclosed salaries. Per-offer detail pages are fetched from `/job/<slug>`.
-
-## Layout (MVP)
-
-- `app/ingest`: source clients and fetch orchestration.
-- `data/raw`: raw payloads by source and date.
-- `scripts/run_ingest.py`: CLI to run ingestion.
-
-More stages (normalize/embed/dedupe/search) will follow the same structure with thin CLI wrappers in `scripts/`.
-
-Notes:
-- No Fluff Jobs ingestion fetches detail pages by default; use `--skip-details` to disable.
+- Pipeline parameters live in `conf/base/parameters.yml`.
+- Application-wide settings (URLs, timeouts) are in `src/job_posting_radar/config.py` and can be overridden via `.env`.

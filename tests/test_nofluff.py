@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.ingest.sources.nofluff import (
+from job_posting_radar.clients.nofluff import (
     NoFluffJobsClient,
     _extract_detail_sections,
     _has_salary,
