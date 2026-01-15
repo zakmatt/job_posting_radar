@@ -160,4 +160,3 @@ class NormalizedJobPosting(BaseModel):
             self.requirements_text or "No requirements provided.",
         ]
         return "\n".join(lines)
-

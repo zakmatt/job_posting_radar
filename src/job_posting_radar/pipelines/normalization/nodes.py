@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from job_posting_radar.normalization.normalizers import normalize_nofluff, normalize_justjoin
-from job_posting_radar.metrics import JOBS_NORMALIZED_TOTAL, NORMALIZATION_ERRORS_TOTAL, push_metrics
 from job_posting_radar.config import AppSettings
+from job_posting_radar.metrics import JOBS_NORMALIZED_TOTAL, NORMALIZATION_ERRORS_TOTAL, push_metrics
+from job_posting_radar.pipelines.normalization.normalizers import normalize_justjoin, normalize_nofluff
 
 logger = logging.getLogger(__name__)
 

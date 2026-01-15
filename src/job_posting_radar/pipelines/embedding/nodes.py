@@ -9,7 +9,7 @@ from job_posting_radar.vector.embeddings import EmbeddingGenerator
 from job_posting_radar.vector.store import VectorStore
 from job_posting_radar.config import AppSettings
 from job_posting_radar.metrics import JOBS_EMBEDDED_TOTAL, EMBEDDING_LATENCY_SECONDS, push_metrics
-from job_posting_radar.normalization.models import NormalizedJobPosting
+from job_posting_radar.pipelines.normalization.models import NormalizedJobPosting
 
 logger = logging.getLogger(__name__)
 
