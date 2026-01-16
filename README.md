@@ -7,20 +7,17 @@ Built with **Kedro** for reproducibility and **Qdrant** for vector search.
 ## Quickstart
 
 ### 1. Environment Setup
-Create a virtual environment and install dependencies using `uv`:
 ```bash
 uv sync
 source .venv/bin/activate
 ```
 
 ### 2. Infrastructure
-Start the monitoring and database stack (Qdrant, Prometheus, Grafana, Pushgateway):
 ```bash
 docker compose up -d
 ```
 
 ### 3. Run the Pipeline
-Run the full pipeline (Ingest → Normalize → Embed → Upsert):
 ```bash
 kedro run
 ```
@@ -33,111 +30,125 @@ kedro run --pipeline embed       # Generate vector embeddings
 kedro run --pipeline upsert      # Upload to Qdrant
 ```
 
-## Search & Discovery
+## API Server
+
+### Start the API
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check & Qdrant status |
+| GET | `/search` | Semantic job search |
+| GET | `/similar` | Find similar jobs |
+| GET | `/docs` | Swagger UI (auto-generated) |
+
+### Example Requests
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Search for jobs
+curl "http://localhost:8000/search?q=senior+python+developer&limit=10&mode=remote"
+
+# Search with city filter
+curl "http://localhost:8000/search?q=data+scientist&city=Warszawa&mode=hybrid"
+
+# Find similar jobs
+curl "http://localhost:8000/similar?source=nofluff&source_id=ABC123"
+
+# Similar jobs across sources
+curl "http://localhost:8000/similar?source=nofluff&source_id=ABC123&cross_source=true"
+```
+
+### Response Example
+```json
+{
+  "query": "senior python developer",
+  "total": 15,
+  "duplicates_collapsed": 3,
+  "results": [
+    {
+      "score": 0.891,
+      "title": "Senior Python Developer",
+      "company": "TechCorp",
+      "locations": [{"city": "Warszawa", "country": "Poland"}],
+      "work_mode": "remote",
+      "salaries": [{"from_amount": 25000, "to_amount": 35000, "currency": "PLN", "period": "month"}],
+      "source": "nofluff",
+      "source_id": "ABC123",
+      "job_url": "https://nofluffjobs.com/job/senior-python-dev",
+      "also_on": ["justjoin"]
+    }
+  ]
+}
+```
+
+## CLI Scripts
 
 ### Semantic Search
-Find jobs matching a natural language query:
 ```bash
-# Basic search
 python scripts/search_jobs.py --q "senior ml engineer"
-
-# With filters
-python scripts/search_jobs.py --q "python backend developer" --limit 10 --mode remote
-python scripts/search_jobs.py --q "data scientist" --city Warszawa --mode hybrid
-python scripts/search_jobs.py --q "devops kubernetes" --source nofluff --limit 5
+python scripts/search_jobs.py --q "python backend" --limit 10 --mode remote
+python scripts/search_jobs.py --q "data scientist" --city Warszawa
 ```
-
-**Options:**
-- `--q` - Search query (required)
-- `--limit` - Max results (default: 20)
-- `--mode` - Filter by work mode: `remote`, `hybrid`, `onsite`
-- `--city` - Filter by city name
-- `--source` - Filter by source: `nofluff`, `justjoin`
 
 ### Similar Jobs
-Find jobs similar to an existing posting:
 ```bash
-# Find similar jobs from the same source
 python scripts/similar_jobs.py --source nofluff --source-id 3DWAXHWK
-
-# Cross-source similarity (find JustJoin jobs similar to a NoFluff posting)
 python scripts/similar_jobs.py --source nofluff --source-id 3DWAXHWK --cross-source
-
-# Exclude same company
-python scripts/similar_jobs.py --source justjoin --source-id senior-python-dev --exclude-same-company
 ```
 
-**Options:**
-- `--source` - Source of reference job: `nofluff`, `justjoin` (required)
-- `--source-id` - Source-specific job ID (required)
-- `--limit` - Max results (default: 20)
-- `--cross-source` - Include jobs from both sources
-- `--exclude-same-company` - Exclude jobs from the same company
+### CLI Options
+| Option | Description |
+|--------|-------------|
+| `--q` | Search query (required for search) |
+| `--limit` | Max results (default: 20) |
+| `--mode` | Work mode: `remote`, `hybrid`, `onsite` |
+| `--city` | City name filter |
+| `--source` | Source: `nofluff`, `justjoin` |
+| `--no-collapse` | Show all duplicates |
+| `--cross-source` | Include both sources (similar only) |
+| `--exclude-same-company` | Exclude same company (similar only) |
 
-### Example Output
-```
-================================================================================
-Search results for: "senior ml engineer"
-Found 20 matching jobs
-================================================================================
-
- 1. [0.847] Senior Machine Learning Engineer
-    Company:  TechCorp
-    Location: Warszawa, Krakow (remote)
-    Salary:   25,000-35,000 PLN/month (b2b)
-    Source:   nofluff
-    URL:      https://nofluffjobs.com/job/senior-ml-engineer-techcorp
-
- 2. [0.823] ML Platform Engineer
-    Company:  DataStartup
-    Location: Remote (remote)
-    Salary:   22,000-30,000 PLN/month (b2b)
-    Source:   justjoin
-    URL:      https://justjoin.it/offers/ml-platform-engineer
-```
-
-## Monitoring & Visualization
+## Monitoring
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
+| API Docs | http://localhost:8000/docs | - |
 | Grafana | http://localhost:3000 | admin / admin |
 | Prometheus | http://localhost:9090 | - |
-| Qdrant Dashboard | http://localhost:6333/dashboard | - |
+| Qdrant | http://localhost:6333/dashboard | - |
 | Kedro Viz | `kedro viz` | - |
 
 ## Project Structure
 
 ```
 job-posting-radar/
-├── conf/
-│   └── base/
-│       ├── catalog.yml      # Dataset definitions
-│       └── parameters.yml   # Pipeline parameters
+├── app/                         # FastAPI application
+│   ├── main.py                  # API endpoints
+│   ├── models.py                # Response models
+│   └── services.py              # Search service
+├── conf/base/
+│   ├── catalog.yml              # Dataset definitions
+│   └── parameters.yml           # Pipeline parameters
 ├── scripts/
-│   ├── search_jobs.py       # Semantic search CLI
-│   └── similar_jobs.py      # Similar jobs CLI
+│   ├── search_jobs.py           # Search CLI
+│   └── similar_jobs.py          # Similar jobs CLI
 ├── src/job_posting_radar/
-│   ├── clients/             # HTTP clients
-│   │   ├── nofluff.py       # NoFluffJobs API client
-│   │   └── justjoin.py      # JustJoin API client
+│   ├── clients/                 # HTTP clients
 │   ├── pipelines/
-│   │   ├── ingestion/       # Fetch raw job data
-│   │   ├── normalization/   # Standardize schema
-│   │   │   ├── models.py    # Pydantic models
-│   │   │   ├── normalizers.py
-│   │   │   └── utils.py
-│   │   ├── embedding/       # Generate vectors
-│   │   │   └── embeddings.py
-│   │   └── upsert/          # Upload to Qdrant
-│   │       └── store.py
-│   ├── config.py            # App settings (env vars)
-│   └── metrics.py           # Prometheus metrics
-├── data/
-│   ├── 01_raw/              # Raw API responses
-│   ├── 02_normalized/       # Standardized postings
-│   ├── 03_embedded/         # With embeddings
-│   └── 04_vector_records/   # Ready for Qdrant
-└── docker/                  # Docker configs
+│   │   ├── ingestion/           # Fetch raw data
+│   │   ├── normalization/       # Standardize schema
+│   │   ├── embedding/           # Generate vectors
+│   │   └── upsert/              # Upload to Qdrant
+│   ├── config.py                # Settings
+│   └── metrics.py               # Prometheus metrics
+├── data/                        # Pipeline artifacts
+└── docker/                      # Docker configs
 ```
 
 ## Configuration
@@ -145,30 +156,24 @@ job-posting-radar/
 ### Pipeline Parameters (`conf/base/parameters.yml`)
 ```yaml
 ingest:
-  pages: 5           # Pages to fetch per source
-  limit: 100         # Max postings per source
-  since_days: 7      # Only recent postings
+  pages: 5
+  limit: 100
+  since_days: 7
 
 embed:
-  batch_size: 50     # Embedding batch size
+  batch_size: 50
 
 upsert:
-  batch_size: 50     # Qdrant upsert batch size
+  batch_size: 50
 ```
 
 ### Environment Variables
-Override defaults in `.env` or export directly:
 ```bash
-# Qdrant
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=job_posts
-
-# Embedding model
 EMBEDDING_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 EMBEDDING_DIMENSION=384
-
-# Metrics
 PUSHGATEWAY_HOST=localhost
 PUSHGATEWAY_PORT=9091
 ```
@@ -182,9 +187,6 @@ PUSHGATEWAY_PORT=9091
 │ NoFluff API │     │ Pydantic    │     │ Sentence    │     │   Qdrant    │
 │ JustJoin API│     │ Models      │     │ Transformers│     │   Vector DB │
 └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-     │                    │                   │                    │
-     ▼                    ▼                   ▼                    ▼
-  01_raw/            02_normalized/      03_embedded/        Vector Store
 ```
 
 ## Troubleshooting
@@ -194,14 +196,10 @@ PUSHGATEWAY_PORT=9091
 docker compose up -d qdrant
 ```
 
-**No jobs found in search:**
+**No jobs found:**
 ```bash
-# Check collection status
 curl http://localhost:6333/collections/job_posts
-
-# Run the full pipeline
 kedro run
 ```
 
-**Embedding model download slow:**
-The first run downloads the model (~500MB). Subsequent runs use cached model.
+**Embedding model slow:** First run downloads ~500MB model. Cached afterward.
