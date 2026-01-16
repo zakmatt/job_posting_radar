@@ -1,18 +1,33 @@
 """Embedding pipeline."""
 
 from kedro.pipeline import Pipeline, node, pipeline
-from .nodes import embed_and_upsert_node
+
+from .nodes import generate_embeddings_node, prepare_vector_records_node
 
 
 def create_pipeline(**kwargs) -> Pipeline:
+    """Create the embedding pipeline.
+
+    Pipeline stages:
+        1. generate_embeddings - Generate vector embeddings for normalized postings
+        2. prepare_vector_records - Transform into Qdrant-ready format
+
+    Returns:
+        Kedro Pipeline with two sequential nodes.
+    """
     return pipeline(
         [
             node(
-                func=embed_and_upsert_node,
+                func=generate_embeddings_node,
                 inputs=["normalized_postings", "params:embedding"],
-                outputs=None,
-                name="embed_and_upsert_node",
+                outputs="embedded_postings",
+                name="generate_embeddings_node",
+            ),
+            node(
+                func=prepare_vector_records_node,
+                inputs="embedded_postings",
+                outputs="vector_records",
+                name="prepare_vector_records_node",
             ),
         ]
     )
-

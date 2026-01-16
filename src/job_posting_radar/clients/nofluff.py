@@ -1,11 +1,10 @@
 """HTTP client for fetching job postings from No Fluff Jobs."""
 
-from __future__ import annotations
-
 import logging
 import random
 import time
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,19 +19,25 @@ class NoFluffJobsClient:
 
     def __init__(
         self,
-        settings: Optional[AppSettings] = None,
-        session: Optional[requests.Session] = None,
+        settings: AppSettings | None = None,
+        session: requests.Session | None = None,
     ) -> None:
+        """Initialize the NoFluff Jobs client.
+
+        Args:
+            settings: Application settings. Defaults to AppSettings().
+            session: Requests session to use. Defaults to a new session.
+        """
         self.settings = settings or AppSettings()
         self.session = session or requests.Session()
         self.base_url = self.settings.nofluff_base_url.rstrip("/")
-        self._last_request_at: Optional[float] = None
+        self._last_request_at: float | None = None
 
     def fetch_page(
         self,
         page: int,
-        criteria: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        criteria: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Fetch a page of offers via the public XHR endpoint.
 
         Args:
@@ -59,8 +64,15 @@ class NoFluffJobsClient:
 
         return {"postings": postings_with_salary, "search": payload}
 
-    def fetch_job_details(self, job_slug: str) -> Dict[str, Any]:
-        """Fetch detailed information for a single offer via the posting API."""
+    def fetch_job_details(self, job_slug: str) -> dict[str, Any]:
+        """Fetch detailed information for a single offer via the posting API.
+
+        Args:
+            job_slug: URL slug identifying the job posting.
+
+        Returns:
+            Dictionary with raw payload and extracted sections.
+        """
         if not job_slug:
             raise ValueError("job_slug must be provided")
         identifier = job_slug.lstrip("/")
@@ -73,13 +85,25 @@ class NoFluffJobsClient:
         return {"raw": payload, "sections": sections}
 
     def _request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
-        """Perform an HTTP request with retry, backoff, and basic rate limiting."""
+        """Perform an HTTP request with retry, backoff, and basic rate limiting.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            url: URL to request.
+            **kwargs: Additional arguments passed to requests.
+
+        Returns:
+            Response object from the successful request.
+
+        Raises:
+            RuntimeError: If all retry attempts fail.
+        """
         headers = {"User-Agent": self.settings.user_agent}
         merged_headers = {**headers, **kwargs.pop("headers", {})}
 
         backoff = self.settings.backoff_initial_seconds
         attempts = self.settings.request_max_retries
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(1, attempts + 1):
             self._honor_rate_limit()
@@ -136,8 +160,18 @@ class NoFluffJobsClient:
         if remaining > 0:
             time.sleep(remaining)
 
-    def _extract_postings(self, next_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Find the postings list within the search payload."""
+    def _extract_postings(self, next_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Find the postings list within the search payload.
+
+        Args:
+            next_data: Raw search API response.
+
+        Returns:
+            List of posting dictionaries.
+
+        Raises:
+            RuntimeError: If postings list cannot be found.
+        """
         postings = next_data.get("postings")
         if isinstance(postings, list):
             return postings
@@ -148,10 +182,18 @@ class NoFluffJobsClient:
         raise RuntimeError("Could not locate postings list in search payload")
 
     def _build_search_params(
-        self, *, page: int, criteria: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Construct query parameters for the listing endpoint."""
-        params: Dict[str, Any] = {
+        self, *, page: int, criteria: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Construct query parameters for the listing endpoint.
+
+        Args:
+            page: Page number to fetch.
+            criteria: Additional filter criteria.
+
+        Returns:
+            Dictionary of query parameters.
+        """
+        params: dict[str, Any] = {
             "pageTo": page,
             "pageSize": self.settings.nofluff_page_size,
             "withSalaryMatch": True,
@@ -165,8 +207,15 @@ class NoFluffJobsClient:
         return params
 
 
-def _walk_for_postings(obj: Any) -> Iterable[List[Dict[str, Any]]]:
-    """Yield any list of posting-like dicts found in a nested structure."""
+def _walk_for_postings(obj: Any) -> Iterable[list[dict[str, Any]]]:
+    """Yield any list of posting-like dicts found in a nested structure.
+
+    Args:
+        obj: Object to search through.
+
+    Yields:
+        Lists of posting dictionaries found in the structure.
+    """
     stack = [obj]
     while stack:
         current = stack.pop()
@@ -175,7 +224,6 @@ def _walk_for_postings(obj: Any) -> Iterable[List[Dict[str, Any]]]:
                 stack.append(value)
         elif isinstance(current, list):
             if current and all(isinstance(item, dict) for item in current):
-                # Heuristic: consider it postings if dict items include title/company-like keys.
                 sample = current[0]
                 if any(key in sample for key in ("title", "postingId", "id", "slug", "company")):
                     yield current  # type: ignore[misc]
@@ -183,8 +231,15 @@ def _walk_for_postings(obj: Any) -> Iterable[List[Dict[str, Any]]]:
                 stack.append(value)
 
 
-def _has_salary(posting: Dict[str, Any]) -> bool:
-    """Return True if a posting contains a salary range."""
+def _has_salary(posting: dict[str, Any]) -> bool:
+    """Return True if a posting contains a salary range.
+
+    Args:
+        posting: Posting dictionary to check.
+
+    Returns:
+        True if salary information is present.
+    """
     if not isinstance(posting, dict):
         return False
     if posting.get("salary") or posting.get("salaryRange"):
@@ -202,11 +257,18 @@ def _has_salary(posting: Dict[str, Any]) -> bool:
     return False
 
 
-def _extract_detail_sections(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract Must Have / Requirements / Offer sections from the posting API payload."""
-    must_have: List[str] = []
-    requirements_description: Optional[str] = None
-    offer_description: Optional[str] = None
+def _extract_detail_sections(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extract Must Have / Requirements / Offer sections from the posting API payload.
+
+    Args:
+        payload: Raw posting detail payload.
+
+    Returns:
+        Dictionary with must_have, requirements_description, and offer_description.
+    """
+    must_have: list[str] = []
+    requirements_description: str | None = None
+    offer_description: str | None = None
 
     requirements = payload.get("requirements")
     if isinstance(requirements, dict):
@@ -255,8 +317,15 @@ def _extract_detail_sections(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _walk_for_sections(obj: Any) -> Iterable[List[Dict[str, Any]]]:
-    """Yield lists of section-like dicts found in a nested structure."""
+def _walk_for_sections(obj: Any) -> Iterable[list[dict[str, Any]]]:
+    """Yield lists of section-like dicts found in a nested structure.
+
+    Args:
+        obj: Object to search through.
+
+    Yields:
+        Lists of section dictionaries.
+    """
     stack = [obj]
     while stack:
         current = stack.pop()
@@ -270,10 +339,17 @@ def _walk_for_sections(obj: Any) -> Iterable[List[Dict[str, Any]]]:
             stack.extend(current)
 
 
-def _section_items_and_content(section: Dict[str, Any]) -> Tuple[List[str], Optional[str]]:
-    """Return normalized list items and textual content for a section dict."""
+def _section_items_and_content(section: dict[str, Any]) -> tuple[list[str], str | None]:
+    """Return normalized list items and textual content for a section dict.
+
+    Args:
+        section: Section dictionary to extract from.
+
+    Returns:
+        Tuple of (items list, content string or None).
+    """
     items_raw = section.get("items") or section.get("values") or []
-    items: List[str] = []
+    items: list[str] = []
     if isinstance(items_raw, list):
         for entry in items_raw:
             if isinstance(entry, dict):
@@ -290,17 +366,29 @@ def _section_items_and_content(section: Dict[str, Any]) -> Tuple[List[str], Opti
     return items, content
 
 
-def _split_content_lines(content: Optional[str]) -> List[str]:
-    """Split a blob of content into individual bullet-like lines."""
+def _split_content_lines(content: str | None) -> list[str]:
+    """Split a blob of content into individual bullet-like lines.
+
+    Args:
+        content: Content string to split.
+
+    Returns:
+        List of non-empty lines.
+    """
     if not content:
         return []
     return [line.strip() for line in content.splitlines() if line.strip()]
 
 
 def _strip_html(raw: str) -> str:
-    """Convert an HTML fragment to normalized plain text."""
+    """Convert an HTML fragment to normalized plain text.
+
+    Args:
+        raw: HTML string to convert.
+
+    Returns:
+        Plain text with normalized whitespace.
+    """
     soup = BeautifulSoup(raw, "html.parser")
     text = soup.get_text("\n")
     return "\n".join(line.strip() for line in text.splitlines() if line.strip())
-
-

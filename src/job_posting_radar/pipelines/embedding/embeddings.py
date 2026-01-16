@@ -1,9 +1,6 @@
 """Module for generating text embeddings using Sentence Transformers."""
 
-from __future__ import annotations
-
 import logging
-from typing import List, Optional
 
 from sentence_transformers import SentenceTransformer
 
@@ -15,7 +12,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingGenerator:
     """Generator for text embeddings using a pre-trained transformer model."""
 
-    def __init__(self, settings: Optional[AppSettings] = None) -> None:
+    def __init__(self, settings: AppSettings | None = None) -> None:
         """Initialize the embedding generator.
 
         Args:
@@ -26,7 +23,7 @@ class EmbeddingGenerator:
         logger.info("Loading embedding model", extra={"model": self.model_name})
         self.model = SentenceTransformer(self.model_name)
 
-    def generate(self, texts: List[str]) -> List[List[float]]:
+    def generate(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a list of strings.
 
         Args:

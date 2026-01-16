@@ -1,9 +1,7 @@
 """Module for interacting with the Qdrant vector database."""
 
-from __future__ import annotations
-
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -17,7 +15,7 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """Wrapper for Qdrant vector database operations."""
 
-    def __init__(self, settings: Optional[AppSettings] = None) -> None:
+    def __init__(self, settings: AppSettings | None = None) -> None:
         """Initialize the Qdrant client and ensure collection exists.
 
         Args:
@@ -50,7 +48,7 @@ class VectorStore:
     def _setup_indexes(self) -> None:
         """Create keyword indexes for fast filtering."""
         logger.info("Setting up payload indexes", extra={"collection": self.collection_name})
-        
+
         index_fields = [
             "source",
             "work_mode",
@@ -58,7 +56,7 @@ class VectorStore:
             "locations[].city",
             "locations[].country",
         ]
-        
+
         for field in index_fields:
             self.client.create_payload_index(
                 collection_name=self.collection_name,
@@ -66,12 +64,11 @@ class VectorStore:
                 field_schema=models.PayloadSchemaType.KEYWORD,
             )
 
-
     def upsert_postings(
         self,
-        ids: List[str],
-        vectors: List[List[float]],
-        payloads: List[Dict[str, Any]],
+        ids: list[str],
+        vectors: list[list[float]],
+        payloads: list[dict[str, Any]],
     ) -> None:
         """Upsert job postings and their embeddings into Qdrant.
 
@@ -95,4 +92,3 @@ class VectorStore:
                 payloads=payloads,
             ),
         )
-

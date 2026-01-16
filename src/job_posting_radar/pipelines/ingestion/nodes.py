@@ -68,7 +68,7 @@ def ingest_nofluff_node(
         for page in range(start_page, start_page + pages):
             if stop_pagination:
                 break
-            logger.info("Fetching NFJ page", extra={"page": page})
+            logger.info("Fetching NoFluff Jobs page", extra={"page": page})
             search_response = client.fetch_page(page=page)
             postings = search_response.get("postings") or []
             if not postings:
@@ -158,7 +158,7 @@ def ingest_justjoin_node(
         for batch in range(pages):
             if stop_pagination:
                 break
-            logger.info("Fetching JJ page", extra={"batch": batch + 1, "cursor": cursor})
+            logger.info("Fetching JustJoin page", extra={"batch": batch + 1, "cursor": cursor})
             search_response = client.fetch_page(cursor=cursor)
             postings = search_response.get("postings") or []
             if not postings:

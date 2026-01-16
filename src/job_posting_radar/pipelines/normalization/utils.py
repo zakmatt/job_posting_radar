@@ -1,11 +1,9 @@
 """Utility functions for normalizing job postings."""
 
-from __future__ import annotations
-
 import html
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from job_posting_radar.pipelines.normalization.models import (
     EmploymentType,
@@ -17,7 +15,7 @@ from job_posting_radar.pipelines.normalization.models import (
 # Seniority mapping
 # ---------------------------------------------------------------------------
 
-_SENIORITY_MAP: Dict[str, Seniority] = {
+_SENIORITY_MAP: dict[str, Seniority] = {
     # NoFluff
     "junior": Seniority.JUNIOR,
     "mid": Seniority.MID,
@@ -32,7 +30,7 @@ _SENIORITY_MAP: Dict[str, Seniority] = {
 }
 
 
-def normalize_seniority(raw: Optional[str]) -> Seniority:
+def normalize_seniority(raw: str | None) -> Seniority:
     """Map raw seniority string to canonical Seniority enum.
 
     Args:
@@ -54,8 +52,8 @@ def normalize_seniority(raw: Optional[str]) -> Seniority:
 
 def normalize_work_mode_nofluff(
     fully_remote: bool,
-    remote_value: Optional[int],
-    hybrid_desc: Optional[str],
+    remote_value: int | None,
+    hybrid_desc: str | None,
 ) -> WorkMode:
     """Determine work mode from NoFluff location fields.
 
@@ -81,7 +79,7 @@ def normalize_work_mode_nofluff(
     return WorkMode.UNKNOWN
 
 
-def normalize_work_mode_justjoin(workplace_type: Optional[str]) -> WorkMode:
+def normalize_work_mode_justjoin(workplace_type: str | None) -> WorkMode:
     """Determine work mode from JustJoin workplaceType.
 
     Args:
@@ -106,7 +104,7 @@ def normalize_work_mode_justjoin(workplace_type: Optional[str]) -> WorkMode:
 # Employment type mapping
 # ---------------------------------------------------------------------------
 
-_EMPLOYMENT_TYPE_MAP: Dict[str, EmploymentType] = {
+_EMPLOYMENT_TYPE_MAP: dict[str, EmploymentType] = {
     "b2b": EmploymentType.B2B,
     "permanent": EmploymentType.PERMANENT,
     "uop": EmploymentType.PERMANENT,
@@ -119,7 +117,7 @@ _EMPLOYMENT_TYPE_MAP: Dict[str, EmploymentType] = {
 }
 
 
-def normalize_employment_type(raw: Optional[str]) -> EmploymentType:
+def normalize_employment_type(raw: str | None) -> EmploymentType:
     """Map raw employment type string to canonical enum.
 
     Args:
@@ -142,7 +140,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def strip_html(text: Optional[str]) -> Optional[str]:
+def strip_html(text: str | None) -> str | None:
     """Remove HTML tags and normalize whitespace.
 
     Args:
@@ -167,7 +165,7 @@ def strip_html(text: Optional[str]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def parse_timestamp(value: Any) -> Optional[datetime]:
+def parse_timestamp(value: Any) -> datetime | None:
     """Parse various timestamp formats to UTC datetime.
 
     Args:

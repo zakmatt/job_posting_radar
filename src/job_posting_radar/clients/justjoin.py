@@ -1,11 +1,9 @@
 """HTTP client for fetching job postings from Just Join IT."""
 
-from __future__ import annotations
-
 import logging
 import random
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 
@@ -19,15 +17,21 @@ class JustJoinClient:
 
     def __init__(
         self,
-        settings: Optional[AppSettings] = None,
-        session: Optional[requests.Session] = None,
+        settings: AppSettings | None = None,
+        session: requests.Session | None = None,
     ) -> None:
+        """Initialize the Just Join IT client.
+
+        Args:
+            settings: Application settings. Defaults to AppSettings().
+            session: Requests session to use. Defaults to a new session.
+        """
         self.settings = settings or AppSettings()
         self.session = session or requests.Session()
         self.api_base_url = self.settings.justjoin_api_base_url.rstrip("/")
-        self._last_request_at: Optional[float] = None
+        self._last_request_at: float | None = None
 
-    def fetch_page(self, cursor: int) -> Dict[str, Any]:
+    def fetch_page(self, cursor: int) -> dict[str, Any]:
         """Fetch a batch of offers via the cursor endpoint.
 
         Args:
@@ -52,7 +56,7 @@ class JustJoinClient:
             "orderBy": "DESC",
         }
         response = self._request("GET", url, params=params)
-        
+
         payload = response.json()
         data = payload.get("data") or []
         if not isinstance(data, list):
@@ -67,7 +71,7 @@ class JustJoinClient:
             "items_count": items_count,
         }
 
-    def fetch_detail(self, slug: str) -> Dict[str, Any]:
+    def fetch_detail(self, slug: str) -> dict[str, Any]:
         """Fetch offer detail by slug.
 
         Args:
@@ -83,13 +87,25 @@ class JustJoinClient:
         return response.json()
 
     def _request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
-        """Perform an HTTP request with retry, backoff, and basic rate limiting."""
+        """Perform an HTTP request with retry, backoff, and basic rate limiting.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            url: URL to request.
+            **kwargs: Additional arguments passed to requests.
+
+        Returns:
+            Response object from the successful request.
+
+        Raises:
+            RuntimeError: If all retry attempts fail.
+        """
         headers = {"User-Agent": self.settings.user_agent}
         merged_headers = {**headers, **kwargs.pop("headers", {})}
 
         backoff = self.settings.backoff_initial_seconds
         attempts = self.settings.request_max_retries
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(1, attempts + 1):
             self._honor_rate_limit()
@@ -147,8 +163,15 @@ class JustJoinClient:
             time.sleep(remaining)
 
 
-def _has_salary(posting: Dict[str, Any]) -> bool:
-    """Return True if a posting contains a salary range."""
+def _has_salary(posting: dict[str, Any]) -> bool:
+    """Return True if a posting contains a salary range.
+
+    Args:
+        posting: Posting dictionary to check.
+
+    Returns:
+        True if salary information is present.
+    """
     if not isinstance(posting, dict):
         return False
     # JJ payload uses employmentTypes list with from/to amounts
@@ -167,6 +190,12 @@ def _has_salary(posting: Dict[str, Any]) -> bool:
 
 
 def _has_money(value: Any) -> bool:
-    """Return True if value looks like a non-null numeric amount."""
-    return isinstance(value, (int, float)) and value is not None
+    """Return True if value looks like a non-null numeric amount.
 
+    Args:
+        value: Value to check.
+
+    Returns:
+        True if value is a non-null number.
+    """
+    return isinstance(value, (int, float)) and value is not None

@@ -1,9 +1,7 @@
 """Normalization functions for different job posting sources."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any
 
 from job_posting_radar.pipelines.normalization.models import (
     EmploymentType,
@@ -21,7 +19,7 @@ from job_posting_radar.pipelines.normalization.utils import (
 )
 
 
-def normalize_nofluff(raw: Dict[str, Any]) -> NormalizedJobPosting:
+def normalize_nofluff(raw: dict[str, Any]) -> NormalizedJobPosting:
     """Normalize a NoFluff Jobs raw payload to canonical schema.
 
     Args:
@@ -46,7 +44,7 @@ def normalize_nofluff(raw: Dict[str, Any]) -> NormalizedJobPosting:
     company = listing.get("name") or details.get("company", {}).get("name")
 
     # Locations
-    locations: List[Location] = []
+    locations: list[Location] = []
     places = listing.get("location", {}).get("places") or details.get("location", {}).get("places") or []
     for place in places:
         city = place.get("city")
@@ -66,8 +64,8 @@ def normalize_nofluff(raw: Dict[str, Any]) -> NormalizedJobPosting:
     seniority = normalize_seniority(seniority_raw)
 
     # Employment types & salaries
-    employment_types: List[EmploymentType] = []
-    salaries: List[Salary] = []
+    employment_types: list[EmploymentType] = []
+    salaries: list[Salary] = []
 
     original_salary = details.get("essentials", {}).get("originalSalary", {})
     salary_types = original_salary.get("types", {})
@@ -119,8 +117,8 @@ def normalize_nofluff(raw: Dict[str, Any]) -> NormalizedJobPosting:
         )
 
     # Skills
-    skills_required: List[str] = []
-    skills_nice_to_have: List[str] = []
+    skills_required: list[str] = []
+    skills_nice_to_have: list[str] = []
 
     musts = details.get("requirements", {}).get("musts", [])
     for item in musts:
@@ -182,7 +180,7 @@ def normalize_nofluff(raw: Dict[str, Any]) -> NormalizedJobPosting:
     )
 
 
-def normalize_justjoin(raw: Dict[str, Any]) -> NormalizedJobPosting:
+def normalize_justjoin(raw: dict[str, Any]) -> NormalizedJobPosting:
     """Normalize a JustJoin raw payload to canonical schema.
 
     Args:
@@ -208,7 +206,7 @@ def normalize_justjoin(raw: Dict[str, Any]) -> NormalizedJobPosting:
     company = data.get("companyName")
 
     # Locations
-    locations: List[Location] = []
+    locations: list[Location] = []
     multilocation = data.get("multilocation") or listing.get("multilocation") or []
     for loc in multilocation:
         city = loc.get("city")
@@ -233,8 +231,8 @@ def normalize_justjoin(raw: Dict[str, Any]) -> NormalizedJobPosting:
     seniority = normalize_seniority(exp_level)
 
     # Employment types & salaries
-    employment_types: List[EmploymentType] = []
-    salaries: List[Salary] = []
+    employment_types: list[EmploymentType] = []
+    salaries: list[Salary] = []
 
     emp_types_list = data.get("employmentTypes") or listing.get("employmentTypes") or []
     for emp in emp_types_list:
@@ -260,8 +258,8 @@ def normalize_justjoin(raw: Dict[str, Any]) -> NormalizedJobPosting:
             )
 
     # Skills
-    skills_required: List[str] = []
-    skills_nice_to_have: List[str] = []
+    skills_required: list[str] = []
+    skills_nice_to_have: list[str] = []
 
     req_skills = data.get("requiredSkills") or listing.get("requiredSkills") or []
     for skill in req_skills:

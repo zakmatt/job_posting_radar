@@ -1,7 +1,5 @@
 """Central configuration for the Job Posting Radar application."""
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 
@@ -129,11 +127,21 @@ class AppSettings(BaseSettings):
     )
 
     def raw_root(self) -> Path:
-        """Return the root directory for raw payloads."""
+        """Return the root directory for raw payloads.
+
+        Returns:
+            Path to the raw data root directory.
+        """
         return self.data_dir / self.raw_subdir
 
     def source_raw_dir(self, source: str, target_date: date) -> Path:
-        """Return the directory where raw payloads for a source and date should be stored."""
+        """Return the directory where raw payloads for a source and date should be stored.
+
+        Args:
+            source: Data source identifier (e.g., "nofluff", "justjoin").
+            target_date: Target date for the data.
+
+        Returns:
+            Path to the source-specific raw data directory.
+        """
         return self.raw_root() / source / target_date.isoformat()
-
-

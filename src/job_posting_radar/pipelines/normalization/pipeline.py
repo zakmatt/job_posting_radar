@@ -9,7 +9,7 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 func=normalize_postings_node,
-                inputs=["raw_nofluff", "raw_justjoin", "params:normalization"],
+                inputs=["raw_nofluff", "raw_justjoin"],
                 outputs="normalized_postings",
                 name="normalize_postings_node",
             ),

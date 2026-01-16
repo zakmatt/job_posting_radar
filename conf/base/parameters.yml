@@ -1,12 +1,11 @@
 ingestion:
-  pages: 1
+  pages: 50
   start_page: 1
-  limit: 50
+  limit: 1000
   since_days: 30
-
-normalization:
-  overwrite: true
 
 embedding:
   batch_size: 50
 
+upsert:
+  batch_size: 50
