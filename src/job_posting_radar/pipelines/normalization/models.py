@@ -1,12 +1,10 @@
 """Pydantic models for normalized job postings."""
 
-from __future__ import annotations
-
 import hashlib
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -44,19 +42,19 @@ class EmploymentType(str, Enum):
 class Location(BaseModel):
     """Geographical location of a job posting."""
 
-    city: Optional[str] = None
-    country: Optional[str] = None
+    city: str | None = None
+    country: str | None = None
 
 
 class Salary(BaseModel):
     """Salary range for a specific employment type."""
 
     employment_type: EmploymentType
-    from_amount: Optional[float] = Field(default=None, description="Lower bound of salary range.")
-    to_amount: Optional[float] = Field(default=None, description="Upper bound of salary range.")
-    currency: Optional[str] = Field(default=None, description="ISO 4217 currency code (e.g., PLN, EUR).")
+    from_amount: float | None = Field(default=None, description="Lower bound of salary range.")
+    to_amount: float | None = Field(default=None, description="Upper bound of salary range.")
+    currency: str | None = Field(default=None, description="ISO 4217 currency code (e.g., PLN, EUR).")
     period: str = Field(default="month", description="Pay period (month, year, hour).")
-    gross: Optional[bool] = Field(default=None, description="True if amounts are gross, False if net.")
+    gross: bool | None = Field(default=None, description="True if amounts are gross, False if net.")
 
 
 class NormalizedJobPosting(BaseModel):
@@ -69,37 +67,37 @@ class NormalizedJobPosting(BaseModel):
     # Identity
     source: Literal["nofluff", "justjoin"]
     source_id: str = Field(..., description="Stable ID per source (guid/reference/id).")
-    slug: Optional[str] = Field(default=None, description="Human-readable URL slug.")
-    job_url: Optional[str] = Field(default=None, description="Full URL to the offer.")
+    slug: str | None = Field(default=None, description="Human-readable URL slug.")
+    job_url: str | None = Field(default=None, description="Full URL to the offer.")
     ingested_at: datetime = Field(..., description="UTC datetime when the posting was ingested.")
 
     # Core info
     title: str
-    company: Optional[str] = None
-    locations: List[Location] = Field(default_factory=list)
+    company: str | None = None
+    locations: list[Location] = Field(default_factory=list)
     work_mode: WorkMode = WorkMode.UNKNOWN
     seniority: Seniority = Seniority.UNKNOWN
 
     # Employment & salary
-    employment_types: List[EmploymentType] = Field(default_factory=list)
-    salaries: List[Salary] = Field(default_factory=list)
+    employment_types: list[EmploymentType] = Field(default_factory=list)
+    salaries: list[Salary] = Field(default_factory=list)
 
     # Skills
-    skills_required: List[str] = Field(default_factory=list)
-    skills_nice_to_have: List[str] = Field(default_factory=list)
+    skills_required: list[str] = Field(default_factory=list)
+    skills_nice_to_have: list[str] = Field(default_factory=list)
 
     # Text content (cleaned)
-    description: Optional[str] = Field(default=None, description="Company/role description text.")
-    requirements_text: Optional[str] = Field(default=None, description="Requirements section text.")
-    offer_text: Optional[str] = Field(default=None, description="What the company offers text.")
+    description: str | None = Field(default=None, description="Company/role description text.")
+    requirements_text: str | None = Field(default=None, description="Requirements section text.")
+    offer_text: str | None = Field(default=None, description="What the company offers text.")
 
     # Timestamps (all UTC)
-    posted_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
-    renewed_at: Optional[datetime] = None
+    posted_at: datetime | None = None
+    expires_at: datetime | None = None
+    renewed_at: datetime | None = None
 
     # Dedup helpers
-    duplicate_group_id: Optional[str] = Field(default=None, description="Filled during deduplication.")
+    duplicate_group_id: str | None = Field(default=None, description="Filled during deduplication.")
 
     @computed_field  # type: ignore[misc]
     @property
@@ -131,7 +129,6 @@ class NormalizedJobPosting(BaseModel):
             self.description or "",
         ]
         combined = "|".join(parts).lower().strip()
-        # Use namespace UUID to generate a stable UUID from the text
         return str(uuid.uuid5(uuid.NAMESPACE_OID, combined))
 
     @computed_field  # type: ignore[misc]
@@ -145,7 +142,7 @@ class NormalizedJobPosting(BaseModel):
         Returns:
             Formatted text block for embedding.
         """
-        loc_str = ", ".join([f"{l.city} ({l.country})" for l in self.locations if l.city])
+        loc_str = ", ".join([f"{loc.city} ({loc.country})" for loc in self.locations if loc.city])
         skills = self.skills_required + self.skills_nice_to_have
         skills_str = ", ".join(skills)
 
@@ -160,4 +157,3 @@ class NormalizedJobPosting(BaseModel):
             self.requirements_text or "No requirements provided.",
         ]
         return "\n".join(lines)
-

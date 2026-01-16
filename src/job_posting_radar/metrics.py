@@ -7,7 +7,7 @@ from typing import Optional
 
 from prometheus_client import CollectorRegistry, Counter, Histogram, push_to_gateway
 
-from app.config import AppSettings
+from job_posting_radar.config import AppSettings
 
 logger = logging.getLogger(__name__)
 

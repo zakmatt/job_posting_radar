@@ -1,0 +1,29 @@
+raw_nofluff:
+  type: partitions.PartitionedDataset
+  path: data/01_raw/nofluff
+  dataset: json.JSONDataset
+  filename_suffix: .json
+
+raw_justjoin:
+  type: partitions.PartitionedDataset
+  path: data/01_raw/justjoin
+  dataset: json.JSONDataset
+  filename_suffix: .json
+
+normalized_postings:
+  type: partitions.PartitionedDataset
+  path: data/02_normalized
+  dataset: json.JSONDataset
+  filename_suffix: .json
+
+embedded_postings:
+  type: partitions.PartitionedDataset
+  path: data/03_embedded
+  dataset: json.JSONDataset
+  filename_suffix: .json
+
+vector_records:
+  type: partitions.PartitionedDataset
+  path: data/04_vector_records
+  dataset: json.JSONDataset
+  filename_suffix: .json
