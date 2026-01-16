@@ -3,12 +3,23 @@
 
 import argparse
 import sys
+from dataclasses import dataclass, field
 from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 from job_posting_radar.config import AppSettings
+
+
+@dataclass
+class CollapsedResult:
+    """A search result with potential duplicates collapsed."""
+
+    score: float
+    payload: dict[str, Any]
+    sources: list[str] = field(default_factory=list)
+    urls: dict[str, str] = field(default_factory=dict)
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,6 +36,7 @@ Examples:
   python scripts/similar_jobs.py --source nofluff --source-id 3DWAXHWK
   python scripts/similar_jobs.py --source justjoin --source-id senior-python-dev --limit 10
   python scripts/similar_jobs.py --source nofluff --source-id ABC123 --cross-source
+  python scripts/similar_jobs.py --source nofluff --source-id ABC123 --no-collapse
         """,
     )
     parser.add_argument(
@@ -53,6 +65,11 @@ Examples:
         "--exclude-same-company",
         action="store_true",
         help="Exclude jobs from the same company",
+    )
+    parser.add_argument(
+        "--no-collapse",
+        action="store_true",
+        help="Don't collapse duplicate postings (show all)",
     )
     return parser.parse_args()
 
@@ -96,6 +113,58 @@ def find_job_by_source_id(
 
     point = results[0]
     return point.payload, point.vector
+
+
+def collapse_duplicates(
+    results: list[Any],
+    exclude_source_id: str,
+) -> list[CollapsedResult]:
+    """Collapse duplicate postings by content_hash, keeping highest score.
+
+    Args:
+        results: List of Qdrant ScoredPoint objects.
+        exclude_source_id: Source ID to exclude (the reference job).
+
+    Returns:
+        List of CollapsedResult with duplicates merged.
+    """
+    groups: dict[str, CollapsedResult] = {}
+
+    for point in results:
+        payload = point.payload
+        score = point.score
+        source_id = payload.get("source_id", "")
+
+        # Skip the reference job
+        if source_id == exclude_source_id:
+            continue
+
+        content_hash = payload.get("content_hash", point.id)
+        source = payload.get("source", "unknown")
+        job_url = payload.get("job_url", "")
+
+        if content_hash not in groups:
+            # First occurrence - create new group
+            groups[content_hash] = CollapsedResult(
+                score=score,
+                payload=payload,
+                sources=[source],
+                urls={source: job_url},
+            )
+        else:
+            # Duplicate found - merge into existing group
+            existing = groups[content_hash]
+            if source not in existing.sources:
+                existing.sources.append(source)
+                existing.urls[source] = job_url
+            # Keep the higher score
+            if score > existing.score:
+                existing.score = score
+                existing.payload = payload
+
+    # Sort by score descending
+    collapsed = sorted(groups.values(), key=lambda x: x.score, reverse=True)
+    return collapsed
 
 
 def format_salary(salaries: list[dict[str, Any]]) -> str:
@@ -186,7 +255,7 @@ def display_reference_job(payload: dict[str, Any]) -> None:
 
 
 def display_similar_jobs(results: list[Any], reference_source_id: str) -> None:
-    """Display similar job results.
+    """Display similar job results without collapsing.
 
     Args:
         results: List of Qdrant ScoredPoint objects.
@@ -224,6 +293,62 @@ def display_similar_jobs(results: list[Any], reference_source_id: str) -> None:
 
     if displayed == 0:
         print("No similar jobs found.")
+
+
+def display_collapsed_results(
+    results: list[CollapsedResult],
+    total_raw: int,
+) -> None:
+    """Display collapsed similar job results with duplicate info.
+
+    Args:
+        results: List of CollapsedResult objects.
+        total_raw: Total number of raw results before collapsing.
+    """
+    duplicates_collapsed = total_raw - len(results) - 1  # -1 for reference job
+
+    print(f"\n{'='*80}")
+    print("SIMILAR JOBS")
+    if duplicates_collapsed > 0:
+        print(f"Found {len(results)} unique jobs ({duplicates_collapsed} duplicates collapsed)")
+    else:
+        print(f"Found {len(results)} similar jobs")
+    print(f"{'='*80}\n")
+
+    if not results:
+        print("No similar jobs found.")
+        return
+
+    for i, result in enumerate(results, 1):
+        payload = result.payload
+        score = result.score
+
+        title = payload.get("title", "Unknown")
+        company = payload.get("company", "Unknown")
+        locations = format_locations(payload.get("locations", []))
+        salary = format_salary(payload.get("salaries", []))
+        work_mode = payload.get("work_mode", "unknown")
+        primary_source = result.sources[0]
+        primary_url = result.urls.get(primary_source, "N/A")
+
+        print(f"{i:2}. [{score:.3f}] {title}")
+        print(f"    Company:  {company}")
+        print(f"    Location: {locations} ({work_mode})")
+        print(f"    Salary:   {salary}")
+        print(f"    Source:   {primary_source}")
+        print(f"    URL:      {primary_url}")
+
+        # Show additional sources if duplicates exist
+        if len(result.sources) > 1:
+            other_sources = [s for s in result.sources if s != primary_source]
+            other_urls = [result.urls.get(s, "") for s in other_sources]
+            also_on = ", ".join(
+                f"{src}" + (f" ({url})" if url else "")
+                for src, url in zip(other_sources, other_urls)
+            )
+            print(f"    Also on:  {also_on}")
+
+        print()
 
 
 def main() -> int:
@@ -273,11 +398,6 @@ def main() -> int:
         )
 
     # Exclude same company if requested
-    if args.exclude_same_company and payload.get("company"):
-        # Note: Qdrant doesn't have a "not equal" filter directly,
-        # so we'd need to use must_not
-        pass  # Will handle in filter construction
-
     search_filter = None
     if conditions:
         search_filter = Filter(must=conditions)
@@ -292,18 +412,27 @@ def main() -> int:
         else:
             search_filter = Filter(must_not=must_not)
 
+    # When collapsing, fetch more results to account for duplicates
+    fetch_limit = args.limit * 3 if not args.no_collapse else args.limit
+    fetch_limit += 1  # +1 to account for reference job
+
     # Search for similar jobs
-    # Request extra results to account for excluding the reference job
     print(f"\nSearching for similar jobs (limit={args.limit})...")
     results = client.search(
         collection_name=settings.qdrant_collection_name,
         query_vector=vector,
         query_filter=search_filter,
-        limit=args.limit + 1,  # +1 to account for reference job
+        limit=fetch_limit,
         with_payload=True,
     )
 
-    display_similar_jobs(results, args.source_id)
+    if args.no_collapse:
+        display_similar_jobs(results[:args.limit + 1], args.source_id)
+    else:
+        collapsed = collapse_duplicates(results, args.source_id)
+        collapsed = collapsed[:args.limit]
+        display_collapsed_results(collapsed, len(results))
+
     return 0
 
 

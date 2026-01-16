@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+from dataclasses import dataclass, field
 from typing import Any
 
 from qdrant_client import QdrantClient
@@ -10,6 +11,16 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 from job_posting_radar.config import AppSettings
 from job_posting_radar.pipelines.embedding.embeddings import EmbeddingGenerator
+
+
+@dataclass
+class CollapsedResult:
+    """A search result with potential duplicates collapsed."""
+
+    score: float
+    payload: dict[str, Any]
+    sources: list[str] = field(default_factory=list)
+    urls: dict[str, str] = field(default_factory=dict)
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,6 +37,7 @@ Examples:
   python scripts/search_jobs.py --q "senior ml engineer"
   python scripts/search_jobs.py --q "python backend" --limit 10 --mode remote
   python scripts/search_jobs.py --q "data scientist" --city Warszawa --mode hybrid
+  python scripts/search_jobs.py --q "devops" --no-collapse  # Show all duplicates
         """,
     )
     parser.add_argument(
@@ -52,6 +64,11 @@ Examples:
         "--source",
         choices=["nofluff", "justjoin"],
         help="Filter by source",
+    )
+    parser.add_argument(
+        "--no-collapse",
+        action="store_true",
+        help="Don't collapse duplicate postings (show all)",
     )
     return parser.parse_args()
 
@@ -93,6 +110,48 @@ def build_filter(
         return None
 
     return Filter(must=conditions)
+
+
+def collapse_duplicates(results: list[Any]) -> list[CollapsedResult]:
+    """Collapse duplicate postings by content_hash, keeping highest score.
+
+    Args:
+        results: List of Qdrant ScoredPoint objects.
+
+    Returns:
+        List of CollapsedResult with duplicates merged.
+    """
+    groups: dict[str, CollapsedResult] = {}
+
+    for point in results:
+        payload = point.payload
+        score = point.score
+        content_hash = payload.get("content_hash", point.id)
+        source = payload.get("source", "unknown")
+        job_url = payload.get("job_url", "")
+
+        if content_hash not in groups:
+            # First occurrence - create new group
+            groups[content_hash] = CollapsedResult(
+                score=score,
+                payload=payload,
+                sources=[source],
+                urls={source: job_url},
+            )
+        else:
+            # Duplicate found - merge into existing group
+            existing = groups[content_hash]
+            if source not in existing.sources:
+                existing.sources.append(source)
+                existing.urls[source] = job_url
+            # Keep the higher score
+            if score > existing.score:
+                existing.score = score
+                existing.payload = payload
+
+    # Sort by score descending
+    collapsed = sorted(groups.values(), key=lambda x: x.score, reverse=True)
+    return collapsed
 
 
 def format_salary(salaries: list[dict[str, Any]]) -> str:
@@ -153,7 +212,7 @@ def format_locations(locations: list[dict[str, Any]]) -> str:
 
 
 def display_results(results: list[Any], query: str) -> None:
-    """Display search results in formatted output.
+    """Display search results in formatted output (no collapsing).
 
     Args:
         results: List of Qdrant ScoredPoint objects.
@@ -182,6 +241,61 @@ def display_results(results: list[Any], query: str) -> None:
         print(f"    Salary:   {salary}")
         print(f"    Source:   {source}")
         print(f"    URL:      {job_url}")
+        print()
+
+
+def display_collapsed_results(
+    results: list[CollapsedResult],
+    query: str,
+    total_raw: int,
+) -> None:
+    """Display collapsed search results with duplicate info.
+
+    Args:
+        results: List of CollapsedResult objects.
+        query: Original search query.
+        total_raw: Total number of raw results before collapsing.
+    """
+    duplicates_collapsed = total_raw - len(results)
+
+    print(f"\n{'='*80}")
+    print(f"Search results for: \"{query}\"")
+    print(f"Found {len(results)} unique jobs", end="")
+    if duplicates_collapsed > 0:
+        print(f" ({duplicates_collapsed} duplicates collapsed)")
+    else:
+        print()
+    print(f"{'='*80}\n")
+
+    for i, result in enumerate(results, 1):
+        payload = result.payload
+        score = result.score
+
+        title = payload.get("title", "Unknown")
+        company = payload.get("company", "Unknown")
+        locations = format_locations(payload.get("locations", []))
+        salary = format_salary(payload.get("salaries", []))
+        work_mode = payload.get("work_mode", "unknown")
+        primary_source = result.sources[0]
+        primary_url = result.urls.get(primary_source, "N/A")
+
+        print(f"{i:2}. [{score:.3f}] {title}")
+        print(f"    Company:  {company}")
+        print(f"    Location: {locations} ({work_mode})")
+        print(f"    Salary:   {salary}")
+        print(f"    Source:   {primary_source}")
+        print(f"    URL:      {primary_url}")
+
+        # Show additional sources if duplicates exist
+        if len(result.sources) > 1:
+            other_sources = [s for s in result.sources if s != primary_source]
+            other_urls = [result.urls.get(s, "") for s in other_sources]
+            also_on = ", ".join(
+                f"{src}" + (f" ({url})" if url else "")
+                for src, url in zip(other_sources, other_urls)
+            )
+            print(f"    Also on:  {also_on}")
+
         print()
 
 
@@ -223,13 +337,16 @@ def main() -> int:
             filter_desc.append(f"source={args.source}")
         print(f"Applying filters: {', '.join(filter_desc)}")
 
+    # When collapsing, fetch more results to account for duplicates
+    fetch_limit = args.limit * 3 if not args.no_collapse else args.limit
+
     # Search
     print(f"Searching for top {args.limit} results...")
     results = client.search(
         collection_name=settings.qdrant_collection_name,
         query_vector=query_vector,
         query_filter=search_filter,
-        limit=args.limit,
+        limit=fetch_limit,
         with_payload=True,
     )
 
@@ -237,7 +354,15 @@ def main() -> int:
         print("\nNo matching jobs found.")
         return 0
 
-    display_results(results, args.q)
+    if args.no_collapse:
+        # Show raw results without collapsing
+        display_results(results[:args.limit], args.q)
+    else:
+        # Collapse duplicates and display
+        collapsed = collapse_duplicates(results)
+        collapsed = collapsed[:args.limit]  # Trim to requested limit
+        display_collapsed_results(collapsed, args.q, len(results))
+
     return 0
 
 
